@@ -1,6 +1,6 @@
 // タスクボード Service Worker（オフライン対応）
 // アプリを更新したら CACHE の番号を1つ上げてください
-const CACHE = 'taskboard-v1';
+const CACHE = 'taskboard-v8';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 
 self.addEventListener('install', e => {
