@@ -44,6 +44,10 @@ nav button.on{color:var(--accent);font-weight:700}
 .col-head .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .col-head .cnt{color:var(--c)}
 .icon{border:0;background:none;color:var(--sub);font-size:18px;padding:2px 10px;margin-left:auto;border-radius:6px;line-height:1}
+.add-row{display:flex;gap:6px;margin:0 8px 8px}
+.add-row .add-task{flex:1;margin:0}
+.add-bulk{flex:none;border:0;background:var(--panel);color:var(--accent);border-radius:8px;padding:9px 10px;font-size:13px;white-space:nowrap}
+.bulk-n{font-size:12px;color:var(--sub);margin:-6px 0 8px}
 .add-task{margin:0 8px 8px;border:0;background:var(--panel);color:var(--accent);border-radius:8px;padding:9px;font-size:14px}
 .col-body{overflow-y:auto;padding:0 8px 10px;min-height:44px;flex:1 1 auto}
 .card-wrap{position:relative;margin-bottom:8px;border-radius:8px;overflow:hidden}
@@ -556,7 +560,7 @@ function renderBoard(){
   var b=board(),h='<div class="board" id="board">';
   b.lists.forEach(function(l){
     h+='<section class="col" data-list="'+l.id+'" style="--c:'+l.color+'"><div class="col-head"><span class="name">'+esc(l.name)+'</span><span class="cnt">'+l.tasks.length+'</span><button class="icon" data-act="list-menu" data-id="'+l.id+'" aria-label="リストの設定">⋯</button></div>'+
-      '<button class="add-task" data-act="add-task" data-id="'+l.id+'">＋ タスクを追加</button><div class="col-body" data-list="'+l.id+'">'+l.tasks.map(cardHTML).join('')+'</div></section>';
+      '<div class="add-row"><button class="add-task" data-act="add-task" data-id="'+l.id+'">＋ タスクを追加</button><button class="add-bulk" data-act="add-bulk" data-id="'+l.id+'" aria-label="複数行をまとめて追加">まとめて</button></div><div class="col-body" data-list="'+l.id+'">'+l.tasks.map(cardHTML).join('')+'</div></section>';
   });
   h+='<section class="col add-col"><button data-act="add-list">＋ リストを追加</button></section></div>';
   m.innerHTML=h;
@@ -578,9 +582,47 @@ function showInlineAdd(lid){
     var cnt=$('.col[data-list="'+lid+'"] .cnt');if(cnt)cnt.textContent=tl.l.tasks.length;
     inp.value='';save();return true;
   };
+  inp.addEventListener('paste',function(e){
+    var txt=(e.clipboardData||window.clipboardData);txt=txt&&txt.getData('text');
+    if(!txt||!/[\r\n]/.test(txt))return;
+    e.preventDefault();
+    var a=inp.selectionStart||0,b=inp.selectionEnd||0,all=inp.value.slice(0,a)+txt+inp.value.slice(b);
+    var n=bulkAppend(lid,all,function(t){var tmp=document.createElement('div');tmp.innerHTML=cardHTML(t);form.before(tmp.firstChild)});
+    inp.value='';body.scrollTop=body.scrollHeight;
+    var tl=findList(lid),cnt=$('.col[data-list="'+lid+'"] .cnt');if(tl&&cnt)cnt.textContent=tl.l.tasks.length;
+    if(n)toast(n+'件のタスクを追加しました');inp.focus();
+  });
   form.onsubmit=function(e){e.preventDefault();if(!add())inp.blur();else inp.focus()};
   inp.addEventListener('blur',function(){setTimeout(function(){if(!form.isConnected)return;add();form.remove();renderBoard()},120)});
   inp.focus();
+}
+
+/* bulk add: 1行 = 1タスク、リストの一番下に順番に追加 */
+function bulkLines(text){return String(text||'').replace(/\r\n?/g,'\n').split('\n').map(function(l){return l.trim()}).filter(Boolean).map(function(l){return l.slice(0,300)})}
+function bulkAppend(lid,text,onEach){
+  var tl=findList(lid);if(!tl)return 0;
+  var lines=bulkLines(text);
+  lines.forEach(function(v){var t={id:uid(),title:v,done:false,start:'',end:''};tl.l.tasks.push(t);if(onEach)onEach(t)});
+  if(lines.length)save();
+  return lines.length;
+}
+function bulkAddSheet(lid){
+  var tl=findList(lid);if(!tl)return;
+  var s=openSheet('<h3>「'+esc(tl.l.name)+'」にまとめて追加</h3><form>'+
+    '<label class="fld">1行が1つのタスクになります。空の行は飛ばします。<textarea id="bulkText" rows="8" placeholder="例：\n部品の発注\n図面の確認\n工具の点検"></textarea></label>'+
+    '<div class="bulk-n" id="bulkN">0件</div>'+
+    '<div class="btns"><button type="button" class="btn" data-x>キャンセル</button><button class="btn pri" id="bulkOk" disabled>追加</button></div></form>');
+  var ta=$('#bulkText',s),n=$('#bulkN',s),ok=$('#bulkOk',s);
+  var upd=function(){var c=bulkLines(ta.value).length;n.textContent=c+'件追加されます';ok.disabled=!c;ok.textContent=c?c+'件を追加':'追加'};
+  ta.addEventListener('input',upd);upd();
+  $('[data-x]',s).onclick=closeSheet;
+  $('form',s).onsubmit=function(e){
+    e.preventDefault();var undo=snapshot(),c=bulkAppend(lid,ta.value);if(!c)return;
+    closeSheet();renderBoard();
+    var body=$('.col-body[data-list="'+lid+'"]');if(body)body.scrollTop=body.scrollHeight;
+    toast(c+'件のタスクを追加しました',undo);
+  };
+  setTimeout(function(){ta.focus()},60);
 }
 
 /* gestures: tap / swipe-to-delete / long-press drag */
@@ -888,6 +930,7 @@ main.addEventListener('click',function(e){
       case 'list-menu':listMenu(id);break;
       case 'task-detail':openTaskSheet(id);break;
       case 'add-task':showInlineAdd(id);break;
+      case 'add-bulk':bulkAddSheet(id);break;
       case 'add-list':addList();break;
       case 'g-today':scrollGanttToday(true);break;
       case 'fab':openTaskSheet(null,{start:todayS(),end:todayS()});break;
